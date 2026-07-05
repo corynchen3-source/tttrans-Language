@@ -159,7 +159,7 @@ export async function POST(req: NextRequest) {
 
     if (shortRes.errorCode === "0" && shortRes.result) {
       const textResult = typeof shortRes.result === "string" ? shortRes.result : JSON.stringify(shortRes.result);
-      const sentences = textResult.split(/[.!?。！？\n]/).map(s => s.trim()).filter(Boolean);
+      const sentences = textResult.split(/[.!?。！？\n]/).map((s: string) => s.trim()).filter(Boolean);
       const finalSentences = sentences.length > 0 ? sentences : [textResult];
       const translated = await batchTranslate(finalSentences);
       return NextResponse.json({ success: true, segments: translated, method: "short_asr" });
@@ -170,7 +170,7 @@ export async function POST(req: NextRequest) {
       try {
         const longResult = await longASR(buffer, file.name);
         if (longResult) {
-          const sentences = longResult.split(/[.!?。！？\n]/).map(s => s.trim()).filter(Boolean);
+          const sentences = longResult.split(/[.!?。！？\n]/).map((s: string) => s.trim()).filter(Boolean);
           const finalSentences = sentences.length > 0 ? sentences : [longResult];
           const translated = await batchTranslate(finalSentences);
           return NextResponse.json({ success: true, segments: translated, method: "long_asr" });
