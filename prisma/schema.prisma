@@ -1,0 +1,455 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+// ============================================================
+// 用户与认证
+// ============================================================
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String?
+  displayName  String?
+  avatarUrl    String?
+  bio          String?
+  role         String   @default("user") // user, moderator, admin
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // 关系
+  accounts        Account[]
+  sessions        Session[]
+  corpusEntries   CorpusEntry[]
+  corpusCollections CorpusCollection[]
+  memoryEntries   MemoryEntry[]
+  memoryCollections MemoryCollection[]
+  glossaryTerms   GlossaryTerm[]
+  glossaryCollections GlossaryCollection[]
+  practiceSessions PracticeSession[]
+  practiceSubmissions PracticeSubmission[]
+  subtitleProjects SubtitleProject[]
+  ownedTeams      Team[]            @relation("TeamOwner")
+  teamMembers     TeamMember[]
+  posts           Post[]
+  postComments    PostComment[]
+  postUpvotes     PostUpvote[]
+  notifications   Notification[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String  @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refreshToken      String? @map("refresh_token")
+  accessToken       String? @map("access_token")
+  expiresAt         Int?    @map("expires_at")
+  tokenType         String? @map("token_type")
+  scope             String?
+  idToken           String? @map("id_token")
+  sessionState      String? @map("session_state")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ============================================================
+// 团队
+// ============================================================
+
+model Team {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?
+  avatarUrl   String?
+  ownerId     String   @map("owner_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  owner     User          @relation("TeamOwner", fields: [ownerId], references: [id])
+  members   TeamMember[]
+  corpusEntries CorpusEntry[]
+  glossaryTerms GlossaryTerm[]
+
+  @@map("teams")
+}
+
+model TeamMember {
+  id       String   @id @default(cuid())
+  teamId   String   @map("team_id")
+  userId   String   @map("user_id")
+  role     String   @default("member") // owner, admin, member
+  joinedAt DateTime @default(now()) @map("joined_at")
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@map("team_members")
+}
+
+// ============================================================
+// 语料库
+// ============================================================
+
+model CorpusEntry {
+  id          String   @id @default(cuid())
+  ownerId     String   @map("owner_id")
+  teamId      String?  @map("team_id")
+  sourceText  String   @map("source_text")
+  targetText  String   @map("target_text")
+  sourceLang  String   @default("en") @map("source_lang")
+  targetLang  String   @default("zh") @map("target_lang")
+  domain      String?
+  tags        String   @default("") // JSON array stored as string for SQLite
+  contentHash String?  @unique @map("content_hash")
+  visibility  String   @default("private") // private, team, public
+  metadata    String   @default("{}") // JSON
+  usageCount  Int      @default(0) @map("usage_count")
+  upvoteCount Int      @default(0) @map("upvote_count")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  owner        User                   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  team         Team?                  @relation(fields: [teamId], references: [id])
+  collectionItems CorpusCollectionItem[]
+
+  @@map("corpus_entries")
+}
+
+model CorpusCollection {
+  id          String   @id @default(cuid())
+  ownerId     String   @map("owner_id")
+  teamId      String?  @map("team_id")
+  name        String
+  description String?
+  tags        String   @default("")
+  visibility  String   @default("private")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  owner User                    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  items CorpusCollectionItem[]
+
+  @@map("corpus_collections")
+}
+
+model CorpusCollectionItem {
+  collectionId String   @map("collection_id")
+  entryId      String   @map("entry_id")
+  addedAt      DateTime @default(now()) @map("added_at")
+
+  collection CorpusCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  entry      CorpusEntry      @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  @@id([collectionId, entryId])
+  @@map("corpus_collection_items")
+}
+
+// ============================================================
+// 记忆库
+// ============================================================
+
+model MemoryEntry {
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id")
+  sourceText String   @map("source_text")
+  targetText String   @map("target_text")
+  sourceLang String   @default("en") @map("source_lang")
+  targetLang String   @default("zh") @map("target_lang")
+  sourceRef  String?  @map("source_ref")
+  sourceType String?  @map("source_type") // manual, practice, corpus_import
+  rating     Int      @default(0)
+  tags       String   @default("")
+  notes      String?
+  visibility String   @default("private")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  user            User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  collectionItems MemoryCollectionItem[]
+
+  @@map("memory_entries")
+}
+
+model MemoryCollection {
+  id          String   @id @default(cuid())
+  ownerId     String   @map("owner_id")
+  name        String
+  description String?
+  tags        String   @default("")
+  visibility  String   @default("private")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  owner User                   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  items MemoryCollectionItem[]
+
+  @@map("memory_collections")
+}
+
+model MemoryCollectionItem {
+  collectionId String   @map("collection_id")
+  entryId      String   @map("entry_id")
+  addedAt      DateTime @default(now()) @map("added_at")
+
+  collection MemoryCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  entry      MemoryEntry       @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  @@id([collectionId, entryId])
+  @@map("memory_collection_items")
+}
+
+// ============================================================
+// 术语库
+// ============================================================
+
+model GlossaryTerm {
+  id         String   @id @default(cuid())
+  ownerId    String   @map("owner_id")
+  teamId     String?  @map("team_id")
+  sourceTerm String   @map("source_term")
+  targetTerm String   @map("target_term")
+  sourceLang String   @default("en") @map("source_lang")
+  targetLang String   @default("zh") @map("target_lang")
+  domain     String?
+  definition String?
+  examples   String   @default("[]") // JSON
+  visibility String   @default("private")
+  isVerified Boolean  @default(false) @map("is_verified")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  owner           User                    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  team            Team?                   @relation(fields: [teamId], references: [id])
+  collectionItems GlossaryCollectionItem[]
+
+  @@map("glossary_terms")
+}
+
+model GlossaryCollection {
+  id          String   @id @default(cuid())
+  ownerId     String   @map("owner_id")
+  name        String
+  description String?
+  tags        String   @default("")
+  visibility  String   @default("private")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  owner User                     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  items GlossaryCollectionItem[]
+
+  @@map("glossary_collections")
+}
+
+model GlossaryCollectionItem {
+  collectionId String   @map("collection_id")
+  termId       String   @map("term_id")
+  addedAt      DateTime @default(now()) @map("added_at")
+
+  collection GlossaryCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  term       GlossaryTerm        @relation(fields: [termId], references: [id], onDelete: Cascade)
+
+  @@id([collectionId, termId])
+  @@map("glossary_collection_items")
+}
+
+// ============================================================
+// 翻译练习
+// ============================================================
+
+model PracticeSession {
+  id                    String   @id @default(cuid())
+  userId                String   @map("user_id")
+  title                 String?
+  sourceText            String   @map("source_text")
+  referenceTranslation  String?  @map("reference_translation")
+  sourceLang            String   @default("en") @map("source_lang")
+  targetLang            String   @default("zh") @map("target_lang")
+  practiceType          String   @default("translation") @map("practice_type")
+  difficulty            String   @default("medium")
+  domain                String?
+  visibility            String   @default("private")
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  user        User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  submissions PracticeSubmission[]
+
+  @@map("practice_sessions")
+}
+
+model PracticeSubmission {
+  id               String   @id @default(cuid())
+  sessionId         String   @map("session_id")
+  userId            String   @map("user_id")
+  userTranslation   String   @map("user_translation")
+  timeSpent         Int?     @map("time_spent") // seconds
+  submittedAt       DateTime @default(now()) @map("submitted_at")
+
+  session PracticeSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  score   PracticeScore?
+
+  @@map("practice_submissions")
+}
+
+model PracticeScore {
+  id               String   @id @default(cuid())
+  submissionId     String   @unique @map("submission_id")
+  overallScore     Float?   @map("overall_score")
+  similarityScore  Float?   @map("similarity_score")
+  bleuScore        Float?   @map("bleu_score")
+  completeness     Float?
+  fluencyScore     Float?   @map("fluency_score")
+  terminologyScore Float?   @map("terminology_score")
+  feedback         String   @default("[]") // JSON
+  scoredBy         String   @default("machine") @map("scored_by")
+  scoredAt         DateTime @default(now()) @map("scored_at")
+
+  submission PracticeSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@map("practice_scores")
+}
+
+// ============================================================
+// 字幕翻译
+// ============================================================
+
+model SubtitleProject {
+  id         String   @id @default(cuid())
+  ownerId    String   @map("owner_id")
+  title      String?
+  sourceType String   @map("source_type") // live_capture, file_upload
+  sourceUrl  String?  @map("source_url")
+  sourceLang String   @default("en") @map("source_lang")
+  targetLang String   @default("zh") @map("target_lang")
+  status     String   @default("draft") // draft, processing, completed
+  durationSec Int?    @map("duration_sec")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  owner    User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  segments SubtitleSegment[]
+
+  @@map("subtitle_projects")
+}
+
+model SubtitleSegment {
+  id         String   @id @default(cuid())
+  projectId  String   @map("project_id")
+  sequence   Int
+  startTime  Float    @map("start_time") // seconds
+  endTime    Float    @map("end_time")
+  sourceText String   @map("source_text")
+  targetText String?  @map("target_text")
+  isEdited   Boolean  @default(false) @map("is_edited")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  project SubtitleProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("subtitle_segments")
+}
+
+// ============================================================
+// 社区帖子
+// ============================================================
+
+model Post {
+  id           String   @id @default(cuid())
+  authorId     String   @map("author_id")
+  postType     String   @map("post_type") // corpus_share, translation_recommendation, glossary_share, discussion
+  title        String
+  body         String
+  entityId     String?  @map("entity_id")
+  entityType   String?  @map("entity_type")
+  mediaUrls    String   @default("[]") @map("media_urls")
+  visibility   String   @default("public")
+  isPinned     Boolean  @default(false) @map("is_pinned")
+  upvoteCount  Int      @default(0) @map("upvote_count")
+  commentCount Int      @default(0) @map("comment_count")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  author   User           @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  comments PostComment[]
+  upvotes  PostUpvote[]
+
+  @@map("posts")
+}
+
+model PostComment {
+  id        String   @id @default(cuid())
+  postId    String   @map("post_id")
+  authorId  String   @map("author_id")
+  parentId  String?  @map("parent_id")
+  body      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  post     Post          @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author   User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  parent   PostComment?  @relation("CommentReplies", fields: [parentId], references: [id])
+  replies  PostComment[] @relation("CommentReplies")
+
+  @@map("post_comments")
+}
+
+model PostUpvote {
+  postId    String   @map("post_id")
+  userId    String   @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([postId, userId])
+  @@map("post_upvotes")
+}
+
+// ============================================================
+// 通知
+// ============================================================
+
+model Notification {
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id")
+  type       String   // review_received, team_invite, import_complete, post_comment, upvote
+  title      String
+  body       String?
+  entityType String?  @map("entity_type")
+  entityId   String?  @map("entity_id")
+  isRead     Boolean  @default(false) @map("is_read")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
